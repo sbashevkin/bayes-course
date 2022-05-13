@@ -41,7 +41,7 @@ grid_post<-function(w, l, prior, grid_length=100){
     # standardize the posterior, so it sums to 1
     posterior <- unstd.posterior / sum(unstd.posterior)
     
-    out<-data.frame(p_grid=p_grid, posterior=posterior)
+    out<-data.frame(p_grid=p_grid, posterior=posterior, prior=prior)
     return(out)
 }
 posterior<-grid_post(w, l, prior="uniform")
