@@ -2,7 +2,7 @@
 title: "Homework-2A"
 author: "Sam Bashevkin"
 date: "`r Sys.Date()`"
-output: html_document
+output: pdf_document
 ---
 
 ```{r setup, include=FALSE}
@@ -62,7 +62,7 @@ model definition for this regression, using any variable names and priors you ch
 defend your choice of priors.
 
 \begin{align*}
-height_1_i &\sim Normal(\mu_i, \sigma) \\
+height_i &\sim Normal(\mu_i, \sigma) \\
 \mu_i &= \alpha + \beta year_i \\
 \alpha &\sim Normal(167,40) \\
 \beta &\sim Log-Normal(0,5) \\
