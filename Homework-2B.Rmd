@@ -1,0 +1,151 @@
+---
+title: "Homework-2B"
+author: "Sam Bashevkin"
+date: "`r Sys.Date()`"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(rethinking)
+library(knitr)
+library(dagitty)
+```
+
+# 1. Construct a linear regression of weight as predicted by height, using the adults (age 18 or greater) from the Howell1 dataset. The heights listed below were recorded in the !Kung census, but weights were not recorded for these individuals. Provide predicted weights and 89% compatibility intervals for each of these individuals. That is, fill in the table below, using model-based predictions.
+
+Reproduce practice data
+```{r}
+newdat<-data.frame(Individual=1:3, height=c(140, 160, 175))
+kable(newdat)
+```
+
+Load and filter data
+```{r}
+data("Howell1")
+Howell1_adult<-Howell1[Howell1$age>=18,]
+xbar<-mean(Howell1_adult$height)
+```
+
+Fit model
+```{r}
+m1<-quap(alist(
+        weight ~ dnorm(mu, sigma),
+        mu <- a + b*(height-xbar),
+        a ~ dnorm(40,10),
+        b ~ dlnorm(0,1),
+        sigma ~ dexp(1)
+    ),
+    data=Howell1_adult)
+```
+
+Predict weights
+```{r}
+pred_weights<-link(m1, newdat)
+
+# 89% Interval
+pred_weights_89<-apply(apply(pred_weights, 2, PI), 2, function(x) paste(round(x, 2), collapse=":"))
+
+# median 
+pred_weights_median<-apply(pred_weights, 2, median)
+
+# Add to table and produce output
+newdat$`expected weight`<-pred_weights_median
+newdat$`89% interval`<-pred_weights_89
+
+kable(newdat)
+```
+
+# 2. From the Howell1 dataset, consider only the people younger than 13 years old. Estimate the causal association between age and weight. Assume that age influences weight through two paths. First, age influences height, and height influences weight. Second, age directly influences weight through agerelated changes in muscle growth and body proportions. All of this implies this causal model (DAG) below. Use a linear regression to estimate the total (not just direct) causal effect of each year of growth on weight. Be sure to carefully consider the priors. Try using prior predictive simulation to assess what they imply.
+
+dag
+```{r}
+dag <- dagitty("dag {
+    A -> H -> W
+    A -> W
+}")
+drawdag(dag)
+```
+
+data
+```{r}
+Howell1_under13<-Howell1[Howell1$age<13,]
+agebar<-mean(Howell1_under13$age)
+heightbar<-mean(Howell1_under13$height)
+```
+
+model
+```{r}
+m2<-quap(alist(
+    weight ~ dnorm(mu, sigma),
+    mu <- a + Ba*(age-agebar) + Bh*(height-heightbar),
+    a ~ dnorm(15, 10),
+    Ba ~ dlnorm(0,1),
+    Bh ~ dlnorm(0,1),
+    sigma ~ dexp(1),
+    
+    height ~ dnorm(nu, tau),
+    nu <- g + Ba2*(age-agebar),
+    g ~ dnorm(100, 20),
+    Ba2 ~ dlnorm(0,1),
+    tau ~ dexp(1)
+),
+data=Howell1_under13)
+```
+
+Total causal effect
+```{r}
+post<-extract.samples(m2)
+n<-1e4
+age_seq<-seq(min(Howell1_under13$age), max(Howell1_under13$age), length.out=50)
+
+H_sim <- with(post , sapply( 1:50 ,
+function(i) rnorm(n, g + Ba2*(age_seq[i]-agebar), tau )))
+
+W_sim <- with(post , sapply( 1:50 ,
+function(i) rnorm(n, a + Ba*(age_seq[i]-agebar) + Bh*(H_sim[,i]-heightbar) , sigma ) ) )
+```
+
+Plot the total effect of age on weight
+```{r}
+plot(age_seq, colMeans(W_sim), type="l", xlab="manipulated age" , ylab="counterfactual weight")
+shade(apply(W_sim,2,PI), age_seq)
+```
+
+# 3. Now suppose the causal association between age and weight might be different for boys and girls. Use a single linear regression, with a categorical variable for sex, to estimate the total causal effect of age on weight separately for boys and girls. How do girls and boys differ? Provide one or more posterior contrasts as a summary.
+
+Prepare index variable
+```{r}
+Howell1_under13$sex<-ifelse(Howell1_under13$male==1, 1, 2)
+```
+
+model
+```{r}
+m3<-quap(alist(
+    weight ~ dnorm(mu, sigma),
+    mu <- a[sex] + Ba[sex]*(age-agebar),
+    a[sex] ~ dnorm(15, 10),
+    Ba[sex] ~ dlnorm(0,1),
+    sigma ~ dexp(1)
+),
+data=Howell1_under13)
+```
+
+contrasts
+```{r}
+muF <- link(m3, data=list(sex=rep(1, 50), age=age_seq, agebar=agebar))
+muM <- link(m3, data=list(sex=rep(2, 50), age=age_seq, agebar=agebar))
+
+mu_contrast<-muF-muM
+plot(NULL, xlim=range(age_seq), ylim=c(-1, 5), 
+     xlab="age", ylab="weight contrast (F-M)")
+for(p in c(0.5, 0.6, 0.7, 0.8, 0.9, 0.99))
+    shade(apply(mu_contrast, 2, PI, prob=p), age_seq)
+abline(h=0, lty=2)
+```
+
+
+
